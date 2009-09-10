@@ -33,6 +33,7 @@ def intersect(l1, l2):
 		return False
 	return True
 
+
 #
 #class Point:
 #	def __init__(self, x, y, z='2D'):
@@ -75,7 +76,10 @@ class Line:
 		return self.p0
 	def end(self):
 		return self.p1
-	
+
+	def length(self):
+		return norm(self.p1-self.p0)
+
 	def interpolate(self, t):
 		return array([(1-t)*self.p0x + t*self.p1x,  (1-t)*self.p0y + t*self.p1y])
 
@@ -85,11 +89,20 @@ class Line:
 		for i in range(0,num_points):
 			p[i] = self.interpolate(t[i])
 		return p
-	
+
+	def bisector(self):
+		""" Return the perpendicular bisector. (It will have the same length as this line.) """
+		midpoint = 0.5*(self.p0 + self.p1)
+		dir = self.p1-self.p0
+		bisector_dir = array([dir[1], -dir[0]])
+		p0new = midpoint - 0.5*bisector_dir
+		p1new = midpoint + 0.5*bisector_dir
+		return Line(p0new, p1new)
+
 	def plot(self, t0 = 0, t1 = 1, color = 'k'):
 		p0 = self.interpolate(t0)
 		p1 = self.interpolate(t1)
-		plot((p0[0],p1[0]), (p0[1],p1[1]), color)		
+		plot((p0[0],p1[0]), (p0[1],p1[1]), color)
 
 
 class Triangle:
@@ -105,22 +118,31 @@ class Triangle:
 		return Line(self.p1, self.p2)
 	def edge2(self):
 		return Line(self.p2, self.p0)
+	def area(self):
+		""" Calculate the area of the triangle. """
+		v0 = self.p1-self.p0
+		v1 = self.p2-self.p0
+		return norm(cross(v0,v1))/2.
+	
 	def plot(self, color = 'k'):
 		self.edge0().plot()
 		self.edge1().plot()
 		self.edge2().plot()
 		
-class Tile:
-	""" Defines a polygon with n corners. The x- and y-coordinates for each corner are stored in p[0] and p[1] respectively. """
-	def __init__(self, x, y, neighbours = None):
+class Polygon:
+	""" Defines a convex polygon with n corners. The x- and y-coordinates for each corner are stored in p[0] and p[1] respectively. """
+	def __init__(self, x, y):
 		self.p = c_[x,y].T
-		self.neighbours = neighbours
 
 	def x(self):
 		return self.p[0]
 	def y(self):
 		return self.p[1]
 
+	def edge(self,i):
+		""" Return the i:th edge, i.e. the line between the i:th corner and the (i+1):th corner. """
+		return Line(self.p[:,i], self.p[:,i+1])
+	
 	def add_point(self, pnew, i):
 		""" Add the point pnew after the i:th corner and before the (i+1):th corner. """
 		self.p = c_[self.p[:,:i], pnew, self.p[:,i:]]
@@ -144,8 +166,49 @@ class Tile:
 		else:
 			return True
 
+	def contains(self, p):
+		""" Check whether the polygon contains the point p or not. """
+		# We check for each edge in the polygon whether p is "to the right" of the edge
+		# by checking if the crossproduct of the vector from one corner to p and the vector from
+		# the same corner to the next corner is positive.
+		for i in range(0, self.p.shape[1]-1):
+			if cross(p-self.p[:,i], self.p[:,i+1]-self.p[:,i]) < 0:
+				return False
+		if cross(p-self.p[:,-1], self.p[:,0]-self.p[:,-1]) < 0:
+			return False
+		return True
+
+	def area(self):
+		""" Calculate the area of the polygon. """
+		# We divide the polygon into n-2 triangles and sum their areas
+		A = 0
+		for i in range(2, self.p.shape[1]):
+			t = Triangle(self.p[:,0], self.p[:,i-1], self.p[:,i])
+			A += t.area()
+		return A
+		
 	def plot(self, color = 'k'):
 		for i in range(0,self.p.shape[1]-1):
-			print self.p[:,i]
 			Line(self.p[:,i], self.p[:,i+1]).plot(color = color)
 		Line(self.p[:,-1], self.p[:,0]).plot(color = color)
+
+class Tile(Polygon):
+	""" Defines a tile for Delaunay triangulations. Center is the defining point of the Tile.
+		If the argument infinite is true then the first and last point are not connected and the
+		relevant lines are assumed to continue indefinitely. """
+	def __init__(self, x, y, center, infinite, neighbours = None):
+		Polygon.__init__(self, x, y)
+		self.center = center
+		self.infinite = infinite
+		self.neighbours = neighbours
+
+	def plot(self, color = 'k'):
+		for i in range(1,self.p.shape[1]-1):
+			Line(self.p[:,i], self.p[:,i+1]).plot(color = color)
+		plot(self.p[0,:], self.p[1,:],'o')
+		if not self.infinite:
+			Line(self.p[:,0], self.p[:,1]).plot(color = color)
+			Line(self.p[:,-1], self.p[:,0]).plot(color = color)
+		else:
+			Line(self.p[:,0], self.p[:,1]).plot(t0 = -10, color = color)
+			Line(self.p[:,-2], self.p[:,-1]).plot(t1 = 10, color = color)
