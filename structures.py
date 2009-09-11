@@ -16,7 +16,7 @@ def collinear(p0, p1, p2):
 	v2 = v2/norm(v2)
 	return allclose(v1, v2)
 
-def intersect(l1, l2):
+def intersect(l1, l2, s0 = 0, s1 = 1, t0 = 0, t1 = 1):
 	""" Check whether two lines intersect between the points that define them. """
 	A = c_[l1.p1-l1.p0, l2.p0-l2.p1]
 	b = l2.p0-l1.p0
@@ -26,12 +26,12 @@ def intersect(l1, l2):
 		# Singular matrix => same line or no intersection
 		# Check if they are the same:
 		if collinear(l1.p0, l1.p1, l2.p0):
-			return True
+			return (0,0)
 		else:
-			return False
-	if (s < 0) or (s > 1) or (t < 0) or (t > 1):
-		return False
-	return True
+			return (None,None)
+	if (s < s0) or (s > s1) or (t < t0) or (t > t1):
+		return (None,None)
+	return (s,t)
 
 
 #
@@ -130,9 +130,11 @@ class Triangle:
 		self.edge2().plot()
 		
 class Polygon:
-	""" Defines a convex polygon with n corners. The x- and y-coordinates for each corner are stored in p[0] and p[1] respectively. """
-	def __init__(self, x, y):
-		self.p = c_[x,y].T
+	""" Defines a convex polygon with n corners. The x- and y-coordinates for each corner are stored
+		in p[0,:] and p[1,:] respectively. """
+	def __init__(self, p):
+		self.p = p #c_[x,y].T
+		self.n = p.shape[1] #x.size
 
 	def x(self):
 		return self.p[0]
@@ -146,10 +148,12 @@ class Polygon:
 	def add_point(self, pnew, i):
 		""" Add the point pnew after the i:th corner and before the (i+1):th corner. """
 		self.p = c_[self.p[:,:i], pnew, self.p[:,i:]]
+		self.n += 1
 		
 	def remove_point(self, i):
 		""" Remove the i:th corner. """
 		self.p = delete(self.p, i, 1)
+		self.n -= 1
 
 	def xmin(self):
 		return min(self.p[0])
@@ -171,7 +175,7 @@ class Polygon:
 		# We check for each edge in the polygon whether p is "to the right" of the edge
 		# by checking if the crossproduct of the vector from one corner to p and the vector from
 		# the same corner to the next corner is positive.
-		for i in range(0, self.p.shape[1]-1):
+		for i in range(0, self.n-1):
 			if cross(p-self.p[:,i], self.p[:,i+1]-self.p[:,i]) < 0:
 				return False
 		if cross(p-self.p[:,-1], self.p[:,0]-self.p[:,-1]) < 0:
@@ -182,13 +186,13 @@ class Polygon:
 		""" Calculate the area of the polygon. """
 		# We divide the polygon into n-2 triangles and sum their areas
 		A = 0
-		for i in range(2, self.p.shape[1]):
+		for i in range(2, self.n):
 			t = Triangle(self.p[:,0], self.p[:,i-1], self.p[:,i])
 			A += t.area()
 		return A
 		
 	def plot(self, color = 'k'):
-		for i in range(0,self.p.shape[1]-1):
+		for i in range(0,self.n-1):
 			Line(self.p[:,i], self.p[:,i+1]).plot(color = color)
 		Line(self.p[:,-1], self.p[:,0]).plot(color = color)
 
@@ -196,19 +200,63 @@ class Tile(Polygon):
 	""" Defines a tile for Delaunay triangulations. Center is the defining point of the Tile.
 		If the argument infinite is true then the first and last point are not connected and the
 		relevant lines are assumed to continue indefinitely. """
-	def __init__(self, x, y, center, infinite, neighbours = None):
-		Polygon.__init__(self, x, y)
+	def __init__(self, p, center, infinite, neighbours = []):
+		Polygon.__init__(self, p)
 		self.center = center
 		self.infinite = infinite
 		self.neighbours = neighbours
 
+	def intersections(self, L):
+		""" Find the intersections p, q of the line L and this tile. Returns (None, None) if there 
+			is no intersection, (p, None) if there is just one intersection and (p,q) otherwise. """
+		(s1,s2) = (None, None)
+		(ip, iq) = (None, None)
+		for i in range(1, self.n-2):
+			e = self.edge(i)
+			(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf)
+			if s != None:
+				if t1 == None:
+					#p = L.interpolate(s)
+					s1 = s
+					ip = i
+				else:
+					#q = L.interpolate(s)
+					s2 = s
+					iq = i
+					break
+
+		if self.infinite:
+			if self.n > 2: index = [0, self.n-2]
+			else: index = [0]
+			for i in index:
+				e = self.edge(i)
+				if i == 0:
+					(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = -Inf, t1 = 1)
+				else:
+					(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = 0, t1 = Inf)
+				if s != None:
+					if s1 == None:
+						#p = L.interpolate(s)
+						s1 = s
+						ip = i
+					else:
+						#q = L.interpolate(s)
+						s2 = s
+						iq = i
+						break
+		return (s1,s2,ip,iq)
+			
+
 	def plot(self, color = 'k'):
+		plot(self.center[0], self.center[1], 'ro')
 		for i in range(1,self.p.shape[1]-1):
 			Line(self.p[:,i], self.p[:,i+1]).plot(color = color)
-		plot(self.p[0,:], self.p[1,:],'o')
-		if not self.infinite:
+		plot(self.p[0,:], self.p[1,:],'gx')
+		if not self.infinite[0]:
 			Line(self.p[:,0], self.p[:,1]).plot(color = color)
-			Line(self.p[:,-1], self.p[:,0]).plot(color = color)
 		else:
 			Line(self.p[:,0], self.p[:,1]).plot(t0 = -10, color = color)
+		if not self.infinite[1]:
+			Line(self.p[:,-1], self.p[:,0]).plot(color = color)
+		else:
 			Line(self.p[:,-2], self.p[:,-1]).plot(t1 = 10, color = color)
