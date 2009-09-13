@@ -90,6 +90,13 @@ class Line:
 			p[i] = self.interpolate(t[i])
 		return p
 
+	def projection(self,p):
+		""" Return the orthogonal projection of the point p onto this line. """
+		v = self.p1-self.p0
+		v = v/norm(v)
+		p = p - self.p0
+		return v*dot(v,p)+self.p0
+
 	def bisector(self):
 		""" Return the perpendicular bisector. (It will have the same length as this line.) """
 		midpoint = 0.5*(self.p0 + self.p1)
@@ -147,7 +154,10 @@ class Polygon:
 	
 	def add_point(self, pnew, i):
 		""" Add the point pnew after the i:th corner and before the (i+1):th corner. """
-		self.p = c_[self.p[:,:i], pnew, self.p[:,i:]]
+		if self.n == 0:
+			self.p = pnew
+		else:		
+			self.p = c_[self.p[:,:i], pnew, self.p[:,i:]]
 		self.n += 1
 		
 	def remove_point(self, i):
@@ -209,54 +219,59 @@ class Tile(Polygon):
 	def intersections(self, L):
 		""" Find the intersections p, q of the line L and this tile. Returns (None, None) if there 
 			is no intersection, (p, None) if there is just one intersection and (p,q) otherwise. """
-		(s1,s2) = (None, None)
+		(p,q) = (None, None)
 		(ip, iq) = (None, None)
 		for i in range(1, self.n-2):
 			e = self.edge(i)
 			(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf)
 			if s != None:
-				if t1 == None:
+				if p == None:
 					#p = L.interpolate(s)
-					s1 = s
+					p = (s,t)
 					ip = i
 				else:
 					#q = L.interpolate(s)
-					s2 = s
+					q = (s,t)
 					iq = i
 					break
 
 		if self.infinite:
-			if self.n > 2: index = [0, self.n-2]
-			else: index = [0]
-			for i in index:
-				e = self.edge(i)
-				if i == 0:
-					(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = -Inf, t1 = 1)
-				else:
-					(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = 0, t1 = Inf)
-				if s != None:
-					if s1 == None:
-						#p = L.interpolate(s)
-						s1 = s
-						ip = i
+			if self.n > 2:
+				for i in [0, self.n-2]:
+					e = self.edge(i)
+					if i == 0:
+						(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = -Inf, t1 = 1)
 					else:
-						#q = L.interpolate(s)
-						s2 = s
-						iq = i
-						break
-		return (s1,s2,ip,iq)
+						(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = 0, t1 = Inf)
+					if s != None:
+						if p == None:
+							p = (s,t)
+							ip = i
+						else:
+							q = (s,t)
+							iq = i
+							break
+			else:
+				e = self.edge(0)
+				(s,t) = intersect(L, e, s0 = -Inf, s1 = Inf, t0 = -Inf, t1 = Inf)
+				if s != None:
+					if p == None:
+						p = (s,t)
+						ip = 0
+					else:
+						q = (s,t)
+						iq = 0
+		return (p,q,ip,iq)
 			
 
 	def plot(self, color = 'k'):
-		plot(self.center[0], self.center[1], 'ro')
+	#	plot(self.center[0], self.center[1], 'ro')
 		for i in range(1,self.p.shape[1]-1):
 			Line(self.p[:,i], self.p[:,i+1]).plot(color = color)
-		plot(self.p[0,:], self.p[1,:],'gx')
-		if not self.infinite[0]:
+	#	plot(self.p[0,:], self.p[1,:],'gx')
+		if not self.infinite:
 			Line(self.p[:,0], self.p[:,1]).plot(color = color)
-		else:
-			Line(self.p[:,0], self.p[:,1]).plot(t0 = -10, color = color)
-		if not self.infinite[1]:
 			Line(self.p[:,-1], self.p[:,0]).plot(color = color)
 		else:
-			Line(self.p[:,-2], self.p[:,-1]).plot(t1 = 10, color = color)
+			Line(self.p[:,0], self.p[:,1]).plot(t0 = -10, color = color)
+			Line(self.p[:,-2], self.p[:,-1]).plot(t1 = 10, color = color)			
