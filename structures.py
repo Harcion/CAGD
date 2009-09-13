@@ -33,35 +33,6 @@ def intersect(l1, l2, s0 = 0, s1 = 1, t0 = 0, t1 = 1):
 		return (None,None)
 	return (s,t)
 
-
-#
-#class Point:
-#	def __init__(self, x, y, z='2D'):
-#		self.x = x
-#		self.y = y
-#		if z == '2D':
-#			self.dim = 2
-#			self.z = 0
-#		else:
-#			self.dim = 3
-#			self.z = z
-#	
-#	def __getitem__(self, i):
-#		if i == 0:
-#			return self.x
-#		elif i == 1:
-#			return self.y
-#		elif i == 2 and self.dim == 3:
-#			return self.z
-#		else:
-#			raise IndexError('Invalid Index	')
-#		
-#	def a(self):
-#		if self.dim == 2:
-#			return array([self.x, self.y])
-#		else:
-#			return array([self.x, self.y, self.	z])
-
 class Line:
 	""" Defines a line through the points p0 and p1. """
 	def __init__(self, p0, p1):
@@ -140,8 +111,8 @@ class Polygon:
 	""" Defines a convex polygon with n corners. The x- and y-coordinates for each corner are stored
 		in p[0,:] and p[1,:] respectively. """
 	def __init__(self, p):
-		self.p = p #c_[x,y].T
-		self.n = p.shape[1] #x.size
+		self.p = p
+		self.n = p.shape[1]
 
 	def x(self):
 		return self.p[0]

@@ -16,7 +16,6 @@ def voronoi(x,y):
 
 	T0 = Tile(c_[L.p0, L.p1], center = p0, infinite = True)
 	T1 = Tile(c_[L.p1, L.p0], center = p1, infinite = True,neighbours = [T0])
-
 	T0.neighbours.append(T1)
 
 	T0.plot()
@@ -25,10 +24,10 @@ def voronoi(x,y):
 	T = [T0,T1]
 	
 	if N < 3:
-		return
+		return T
 	
 	p = P[:,2]
-	done = False
+	
 	# Find which tile p is in by checking which tile's center it is closest to
 	r = Inf
 	Ti = None
@@ -40,31 +39,44 @@ def voronoi(x,y):
 
 	# Find the perpendicular bisector to the line between p and Ti's center
 	L = Line(p, Ti.center).bisector()
-	L.plot()
 	# Then find the intersection between the boundary of Ti and this line
 	(p1, p2, i1, i2) = Ti.intersections(L)
-	(s1,t1) = p1
-	if p2 == None:
+	if p1 == None: # No intersections - parallell!
+		pass
+	elif p2 == None: # One intersection
 		infinite = True
-		edge = Ti.edge(i1)
-		s = s1
-		t = t1
+		(s,t) = p1
+		# Check which neighbour is on the other side of the edge
+		r = Inf
+		for k in range(0, len(Ti.neighbours)):
+			rk = norm(Ti.neighbours[k].center - e1)
+			if rk < r:
+				rk = r
+				start_index = k
+
 		# Check if p is to the left or right of Ti.center
+		edge = Ti.edge(i1)
 		Pc = edge.projection(Ti.center)
 		Pp = edge.projection(p)
 		tc = (Pc[0]-edge.p0[0])/(edge.p1[0]-edge.p0[0])
 		tp = (Pp[0]-edge.p0[0])/(edge.p1[0]-edge.p0[0])
-		#  If tp > tc then p is to the right of Ti.center. We cannot have equality if p != Ti.center.
-		# Left is the bad case
-		start_index = 0
+		# If tp > tc then p is to the right of Ti.center. We cannot have equality if p != Ti.center.
+		# Left is the "bad" case, we cannot move clockwise at once since that will take us to infinity
+		# (and beyond), so we have to rewind and find the first tile having just one intersection with
+		# the line as well, this will be the one where we are coming back from infinity and the one
+		# we should start moving clockwise from.
 		if tp > tc:
 			orientation = 'right'
 			e1 = L.interpolate(s)
 			Tnew = Tile(c_[L.p0, e1], center = p, infinite = True, neighbours = [Ti])
+			
+			#TODO: Adjust Ti edges
 		else:
 			orientation = 'left'
 			start_index = -1
-			for k in range(len(Ti.neighbours)-1, -1,-1 ):  # Goes from last Ti.neighbour to 0
+			index = range(start_index,len(Ti.neighbours))
+			index.extend(0, start_index)
+			for k in index:  # This will go backwards from the first neighbour past the one we should end at
 				Tk = Ti.neighbours[k]
 				Lk = Line(p, Tk.center).bisector()
 				(p1, p2, i1, i2) = Tk.intersections(Lk)
@@ -78,26 +90,34 @@ def voronoi(x,y):
 					e0 = Lk.interpolate(s0)
 					e1 = Lk.interpolate(s)
 					Tnew = Tile(c_[e0,e1], center = p, infinite = True, neighbours = [Tk])
-					Lk.plot()
-					print Tk is T0
 					break
+			#TODO: Adjust Ti edges
 	else:
-		# Pick the "right" edge if there are two intersections (i.e. not left)
+		# Two intersections
+		# Pick the "right" edge to start with (i.e. not left)
 		# This way the orientation will be 'right' automatically
 		orientation = 'right'
-		(s2,t2) = p2
+		infinite = False
+		(s1, t1) = p1
+		(s2, t2) = p2
+		p1 = L.interpolate(s1)
+		p2 = L.interpolate(s2)
 		if s2 > s1:
-			edge = Ti.edge(i2)
-			s = s2
+			e1 = p1
+			e2 = p2
+			edge1 = i1
+			edge2 = i2
 		else:
-			edge = Ti.edge(i1)
-			s = s1
-		
+			e1 = p2
+			e2 = p1
+			edge1 = i2
+			edge2 = i1
+		Tnew = Tile(c_[e1,e2], center = p, infinite = False, neighbours = [Ti])
+		# Adjust edges of Ti:
+		Ti.p = c_[Ti.p[:,0:edge1], e2, e1, Ti.p[:,edge2+1:]]
+		Ti.n = Ti.p.shape[1]
 	
-	e1 = L.interpolate(s)  # Intersection
-#	m = (Ti.center + p)/2.  # Other point on the new edge
-	
-#	
+
 #	if tp > tc:
 #		e2 = edge.interpolate(max(2*abs(t),1))
 #		Tnew = Tile(c_[e1,m,e2], center = p, infinite = True, neighbours = [Ti])
@@ -118,13 +138,12 @@ def voronoi(x,y):
 #			Ti.p[:,0] = e1
 #			Ti.p[:,1] = edge.interpolate(2*t)
 #		Ti.add_point(m,0)
-	
+
 	ek = copy(e1)
 	
-#	if done:
-#		start_index = len(Ti.neighbours)+1 # Skip the for-loop
-
-	for k in range(start_index,len(Ti.neighbours)):
+	index = range(start_index,len(Ti.neighbours))
+	index.extend(range(0,start_index))
+	for k in index:
 		Tk = Ti.neighbours[k]
 
 		Lk = Line(p, Tk.center).bisector()
@@ -139,26 +158,32 @@ def voronoi(x,y):
 			(s2,t2) = p2
 			p1 = Lk.interpolate(s1)
 			p2 = Lk.interpolate(s2)
+			if allclose(e1,p1) or allclose(e1,p2):
+				# We are back where we started
+				break			
 			if allclose(ek, p1):
-				ek = p2
+				ek2 = p2
+				edge1 = i2	# Index of the edge which the line intersects at ek2
+				edge2 = i1	# Index of the edge which the line intersects at ek1				
 			else:
-				ek = p1
-			Tnew.add_point(ek, Tnew.n)
+				ek2 = p1
+				edge1 = i1
+				edge2 = i2
+			Tnew.add_point(ek2, Tnew.n)
 			Tnew.neighbours.append(Tk)
+			
+			# Adjust edges of Tk:
+			# Edges with index between edge1 and edge2 should be removed and exchanged with one edge
+			# from ek2 to ek. (Since the intersecting line is moving clockwise.)
+			Tk.p = c_[Tk.p[:,0:edge1], ek2, ek, Tk.p[:,edge2+1:]]
+			Tk.n = Tk.p.shape[1]
+			
+			ek = copy(ek2)
 
-	if not infinite: # Then we should reach Ti again
-		Lk = Line(p, Tk.center).bisector()
-		(p1, p2, i1, i2) = Ti.intersections(Lk)
-		(s,t) = p2
-		p2 = Lk.interpolate(s)
-		Tnew.add_point(p2, Tnew.n)
-	else:
-		# Add a point along the last line which is infinite
-	#	Lk.plot()		
+	if infinite:
+		# Add a point along the last line, which is infinite
 		if orientation == 'right':
 			Tnew.add_point(Lk.p1, Tnew.n)
-			# Also add a point along the first line to make it a line
-			Tnew.add_point(L.p0, 0)
 		else:
 			Tnew.add_point(L.p1, Tnew.n)
 	
@@ -166,113 +191,3 @@ def voronoi(x,y):
 	plot(x,y,'go')
 	Tnew.plot()
 	print Tnew.p
-#		
-#	for Tk in Ti.neighbours:
-#		L2 = Line(p, Tk.center).bisector()
-#		L2.plot()
-#		m = (Tk.center + p)/2.  # Other point on the new edge
-#		print m
-#
-#		if tp > tc:
-#			if allclose(m, e1):
-#				m = L2.p0
-#				print m
-#			T2.p[:,0] = m
-#			Tk.p[:,-1] = e1
-#			Tk.add_point(m, Tk.n)
-#			
-#		else:
-#			if allclose(m, e1):
-#				m = L2.p1
-#			T2.p[:,-1] = m
-#			Tk.p[:,0] = e1
-#			Tk.add_point(m,0)
-#	
-#	T.append(T2)
-#	figure()
-#	plot(x,y,'go')
-#	for Tk in T:
-#		#figure()
-#		Tk.plot()
-#	i = 0
-#	for Tk in T:
-#		figure()
-#		plot(x,y,'go')
-#		Tk.plot()
-#		title(i)
-#		i += 1
-#	e2 = L.p0				# One more point on the line
-#
-#	if allclose(e2, e1):	# If coincide, pick the other one which is farther away
-#		e2 = L.p1
-#	plot(e2[0],e2[1],'bx')		
-#	print Ti.p
-#	# Check where the intersection is in relation to edge.p0, edge.p1 and move the appropriate point
-#	t = p1[1]
-#	print t
-#	if t < 0:
-#		# Adjust T2 edge
-#		T2.p[:,1] = e1
-#		T2.p[:,0] = T2.edge(0).interpolate(2*t)
-#		# Add new T2 edge
-#		T2.add_point(e2, T2.n)
-#		# Adjust Ti edges
-#		Ti.p[:,0] = e1
-#		Ti.add_point(e2,0)
-#	elif t < 1:
-#		# Adjust T2 edge
-#		T2.p[:,1] = e1
-#		# Add new T2 edge
-#		T2.add_point(e2, T2.n)
-#		print Ti.p
-#		# Adjust Ti edges
-#		Ti.p[:,0] = e1
-#		Ti.add_point(e2,0)
-#		print "here"
-#		print Ti.p
-#	else:
-#		# Adjust T2 edge
-#		T2.p[:,1] = e1
-#		# Add new T2 edge
-#		T2.add_point(e2, T2.n)
-#		# Adjust Ti edges
-#		Ti.p[:,0] = e1
-#		Ti.p[:,1] = Ti.edge(0).interpolate(2*t)
-#		Ti.add_point(e2,0)
-#	
-#	
-#	Tk = Ti.neighbours[0]
-#	# Find the perpendicular bisector to the line between p and Ti's center
-#	L2 = Line(p, Tk.center).bisector()
-#	# Will have same intersection e1 so just pick the midpoint to get another point on the bisector
-#	e2 = (Tk.center+p)/2.
-#	if allclose(e1,e2):
-#		e2 = Line(p,Tk.center).bisector().p0
-#	# Adjust T2 edge
-#	T2.p[:,0] = e2
-#	if t < 0:
-#		# Adjust Tk edge
-#		Tk.p[:,1] = e1
-#		Tk.add_point(e2,Tk.n)
-#	elif t < 1:
-#		# Adjust Tk edge
-#		Tk.p[:,1] = e1
-#		Tk.add_point(e2,Tk.n)
-#	else:
-#		# Adjust Tk edge
-#		Tk.p[:,1] = e1
-#		Tk.p[:,0] = Ti.edge(0).interpolate(2*t)
-#		Tk.add_point(e2,Tk.n)
-#
-#	T2.plot()
-#
-#	T.append(T2)
-#
-#	#figure()
-#	for Tk in T:
-#		figure()
-#		Tk.plot()
-#	#	
-#
-
-
